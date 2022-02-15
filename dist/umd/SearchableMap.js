@@ -62,7 +62,7 @@
     var TreeIterator = /** @class */ (function () {
         function TreeIterator(set, type) {
             var node = set._tree;
-            var keys = Object.keys(node);
+            var keys = Array.from(node.keys());
             this.set = set;
             this._type = type;
             this._path = keys.length > 0 ? [{ node: node, keys: keys }] : [];
@@ -80,7 +80,7 @@
             if (last$1(keys) === LEAF) {
                 return { done: false, value: this.result() };
             }
-            this._path.push({ node: node[last$1(keys)], keys: Object.keys(node[last$1(keys)]) });
+            this._path.push({ node: node.get(last$1(keys)), keys: Array.from(node.get(last$1(keys)).keys()) });
             return this.dive();
         };
         TreeIterator.prototype.backtrack = function () {
@@ -104,7 +104,7 @@
                 .join('');
         };
         TreeIterator.prototype.value = function () {
-            return last$1(this._path).node[LEAF];
+            return last$1(this._path).node.get(LEAF);
         };
         TreeIterator.prototype.result = function () {
             if (this._type === VALUES) {
@@ -136,22 +136,36 @@
         var results = {};
         var innerStack = [];
         var _loop_1 = function () {
-            var _a = stack.pop(), node_1 = _a.node, distance = _a.distance, key = _a.key, i = _a.i, edit = _a.edit;
-            Object.keys(node_1).forEach(function (k) {
+            var e_1, _a;
+            var _b = stack.pop(), node_1 = _b.node, distance = _b.distance, key = _b.key, i = _b.i, edit = _b.edit;
+            var _loop_2 = function (k) {
                 if (k === LEAF) {
                     var totDistance = distance + (query.length - i);
-                    var _a = __read(results[key] || [null, Infinity], 2), d = _a[1];
+                    var _e = __read(results[key] || [null, Infinity], 2), d = _e[1];
                     if (totDistance <= maxDistance && totDistance < d) {
-                        results[key] = [node_1[k], totDistance];
+                        results[key] = [node_1.get(k), totDistance];
                     }
                 }
                 else {
                     withinDistance(query, k, maxDistance - distance, i, edit, innerStack).forEach(function (_a) {
                         var d = _a.distance, i = _a.i, edit = _a.edit;
-                        stack.push({ node: node_1[k], distance: distance + d, key: key + k, i: i, edit: edit });
+                        stack.push({ node: node_1.get(k), distance: distance + d, key: key + k, i: i, edit: edit });
                     });
                 }
-            });
+            };
+            try {
+                for (var _c = (e_1 = void 0, __values(node_1.keys())), _d = _c.next(); !_d.done; _d = _c.next()) {
+                    var k = _d.value;
+                    _loop_2(k);
+                }
+            }
+            catch (e_1_1) { e_1 = { error: e_1_1 }; }
+            finally {
+                try {
+                    if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+                }
+                finally { if (e_1) throw e_1.error; }
+            }
         };
         while (stack.length > 0) {
             _loop_1();
@@ -217,8 +231,9 @@
          * mutable views of a map at a prefix.
          */
         function SearchableMap(tree, prefix) {
-            if (tree === void 0) { tree = {}; }
+            if (tree === void 0) { tree = new Map(); }
             if (prefix === void 0) { prefix = ''; }
+            this._size = undefined;
             this._tree = tree;
             this._prefix = prefix;
         }
@@ -251,33 +266,46 @@
          * @return A [[SearchableMap]] representing a mutable view of the original Map at the given prefix
          */
         SearchableMap.prototype.atPrefix = function (prefix) {
-            var _a;
+            var e_1, _a;
             if (!prefix.startsWith(this._prefix)) {
                 throw new Error('Mismatched prefix');
             }
             var _b = __read(trackDown(this._tree, prefix.slice(this._prefix.length)), 2), node = _b[0], path = _b[1];
             if (node === undefined) {
-                var _c = __read(last(path), 2), parentNode = _c[0], key_1 = _c[1];
-                var nodeKey = Object.keys(parentNode).find(function (k) { return k !== LEAF && k.startsWith(key_1); });
-                if (nodeKey !== undefined) {
-                    return new SearchableMap((_a = {}, _a[nodeKey.slice(key_1.length)] = parentNode[nodeKey], _a), prefix);
+                var _c = __read(last(path), 2), parentNode = _c[0], key = _c[1];
+                try {
+                    for (var _d = __values(parentNode.keys()), _e = _d.next(); !_e.done; _e = _d.next()) {
+                        var k = _e.value;
+                        if (k !== LEAF && k.startsWith(key)) {
+                            var node_1 = new Map();
+                            node_1.set(k.slice(key.length), parentNode.get(k));
+                            return new SearchableMap(node_1, prefix);
+                        }
+                    }
+                }
+                catch (e_1_1) { e_1 = { error: e_1_1 }; }
+                finally {
+                    try {
+                        if (_e && !_e.done && (_a = _d.return)) _a.call(_d);
+                    }
+                    finally { if (e_1) throw e_1.error; }
                 }
             }
-            return new SearchableMap(node || {}, prefix);
+            return new SearchableMap(node, prefix);
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/clear
          */
         SearchableMap.prototype.clear = function () {
-            delete this._size;
-            this._tree = {};
+            this._size = undefined;
+            this._tree.clear();
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/delete
          * @param key  Key to delete
          */
         SearchableMap.prototype.delete = function (key) {
-            delete this._size;
+            this._size = undefined;
             return remove(this._tree, key);
         };
         /**
@@ -290,21 +318,22 @@
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/forEach
          * @param fn  Iteration function
+         * @deprecated Use a `for (... of ...)` loop instead.
          */
         SearchableMap.prototype.forEach = function (fn) {
-            var e_1, _a;
+            var e_2, _a;
             try {
                 for (var _b = __values(this), _c = _b.next(); !_c.done; _c = _b.next()) {
                     var _d = __read(_c.value, 2), key = _d[0], value = _d[1];
                     fn(key, value, this);
                 }
             }
-            catch (e_1_1) { e_1 = { error: e_1_1 }; }
+            catch (e_2_1) { e_2 = { error: e_2_1 }; }
             finally {
                 try {
                     if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
                 }
-                finally { if (e_1) throw e_1.error; }
+                finally { if (e_2) throw e_2.error; }
             }
         };
         /**
@@ -346,7 +375,7 @@
          */
         SearchableMap.prototype.get = function (key) {
             var node = lookup(this._tree, key);
-            return node !== undefined ? node[LEAF] : undefined;
+            return node !== undefined ? node.get(LEAF) : undefined;
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/has
@@ -355,7 +384,7 @@
          */
         SearchableMap.prototype.has = function (key) {
             var node = lookup(this._tree, key);
-            return node !== undefined && node.hasOwnProperty(LEAF);
+            return node !== undefined && node.has(LEAF);
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/keys
@@ -374,9 +403,9 @@
             if (typeof key !== 'string') {
                 throw new Error('key must be a string');
             }
-            delete this._size;
+            this._size = undefined;
             var node = createPath(this._tree, key);
-            node[LEAF] = value;
+            node.set(LEAF, value);
             return this;
         };
         Object.defineProperty(SearchableMap.prototype, "size", {
@@ -384,13 +413,14 @@
              * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/size
              */
             get: function () {
-                var _this = this;
                 if (this._size) {
                     return this._size;
                 }
                 /** @ignore */
                 this._size = 0;
-                this.forEach(function () { _this._size += 1; });
+                var iter = this.entries();
+                while (!iter.next().done)
+                    this._size += 1;
                 return this._size;
             },
             enumerable: false,
@@ -416,10 +446,38 @@
             if (typeof key !== 'string') {
                 throw new Error('key must be a string');
             }
-            delete this._size;
+            this._size = undefined;
             var node = createPath(this._tree, key);
-            node[LEAF] = fn(node[LEAF]);
+            node.set(LEAF, fn(node.get(LEAF)));
             return this;
+        };
+        /**
+         * Fetches the value of the given key. If the value does not exist, calls the
+         * given function to create a new value, which is inserted at the given key
+         * and subsequently returned.
+         *
+         * ### Example:
+         *
+         * ```javascript
+         * const map = searchableMap.fetch('somekey', () => new Map())
+         * map.set('foo', 'bar')
+         * ```
+         *
+         * @param key  The key to update
+         * @param defaultValue  A function that creates a new value if the key does not exist
+         * @return The existing or new value at the given key
+         */
+        SearchableMap.prototype.fetch = function (key, initial) {
+            if (typeof key !== 'string') {
+                throw new Error('key must be a string');
+            }
+            this._size = undefined;
+            var node = createPath(this._tree, key);
+            var value = node.get(LEAF);
+            if (value === undefined) {
+                node.set(LEAF, value = initial());
+            }
+            return value;
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/values
@@ -441,7 +499,7 @@
          * @return A new [[SearchableMap]] with the given entries
          */
         SearchableMap.from = function (entries) {
-            var e_2, _a;
+            var e_3, _a;
             var tree = new SearchableMap();
             try {
                 for (var entries_1 = __values(entries), entries_1_1 = entries_1.next(); !entries_1_1.done; entries_1_1 = entries_1.next()) {
@@ -449,12 +507,12 @@
                     tree.set(key, value);
                 }
             }
-            catch (e_2_1) { e_2 = { error: e_2_1 }; }
+            catch (e_3_1) { e_3 = { error: e_3_1 }; }
             finally {
                 try {
                     if (entries_1_1 && !entries_1_1.done && (_a = entries_1.return)) _a.call(entries_1);
                 }
-                finally { if (e_2) throw e_2.error; }
+                finally { if (e_3) throw e_3.error; }
             }
             return tree;
         };
@@ -470,73 +528,115 @@
         return SearchableMap;
     }());
     var trackDown = function (tree, key, path) {
+        var e_4, _a;
         if (path === void 0) { path = []; }
         if (key.length === 0 || tree == null) {
             return [tree, path];
         }
-        var nodeKey = Object.keys(tree).find(function (k) { return k !== LEAF && key.startsWith(k); });
-        if (nodeKey === undefined) {
-            path.push([tree, key]); // performance: update in place
-            return trackDown(undefined, '', path);
+        try {
+            for (var _b = __values(tree.keys()), _c = _b.next(); !_c.done; _c = _b.next()) {
+                var k = _c.value;
+                if (k !== LEAF && key.startsWith(k)) {
+                    path.push([tree, k]); // performance: update in place
+                    return trackDown(tree.get(k), key.slice(k.length), path);
+                }
+            }
         }
-        path.push([tree, nodeKey]); // performance: update in place
-        return trackDown(tree[nodeKey], key.slice(nodeKey.length), path);
+        catch (e_4_1) { e_4 = { error: e_4_1 }; }
+        finally {
+            try {
+                if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+            }
+            finally { if (e_4) throw e_4.error; }
+        }
+        path.push([tree, key]); // performance: update in place
+        return trackDown(undefined, '', path);
     };
     var lookup = function (tree, key) {
+        var e_5, _a;
         if (key.length === 0 || tree == null) {
             return tree;
         }
-        var nodeKey = Object.keys(tree).find(function (k) { return k !== LEAF && key.startsWith(k); });
-        if (nodeKey === undefined) {
-            return undefined;
+        try {
+            for (var _b = __values(tree.keys()), _c = _b.next(); !_c.done; _c = _b.next()) {
+                var k = _c.value;
+                if (k !== LEAF && key.startsWith(k)) {
+                    return lookup(tree.get(k), key.slice(k.length));
+                }
+            }
         }
-        return lookup(tree[nodeKey], key.slice(nodeKey.length));
+        catch (e_5_1) { e_5 = { error: e_5_1 }; }
+        finally {
+            try {
+                if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+            }
+            finally { if (e_5) throw e_5.error; }
+        }
     };
     var createPath = function (tree, key) {
-        var _a;
+        var e_6, _a, e_7, _b;
         if (key.length === 0 || tree == null) {
             return tree;
         }
-        var nodeKey = Object.keys(tree).find(function (k) { return k !== LEAF && key.startsWith(k); });
-        if (nodeKey === undefined) {
-            var toSplit = Object.keys(tree).find(function (k) { return k !== LEAF && k.startsWith(key[0]); });
-            if (toSplit === undefined) {
-                tree[key] = {};
+        try {
+            for (var _c = __values(tree.keys()), _d = _c.next(); !_d.done; _d = _c.next()) {
+                var k = _d.value;
+                if (k !== LEAF && key.startsWith(k)) {
+                    return createPath(tree.get(k), key.slice(k.length));
+                }
             }
-            else {
-                var prefix = commonPrefix(key, toSplit);
-                tree[prefix] = (_a = {}, _a[toSplit.slice(prefix.length)] = tree[toSplit], _a);
-                delete tree[toSplit];
-                return createPath(tree[prefix], key.slice(prefix.length));
-            }
-            return tree[key];
         }
-        return createPath(tree[nodeKey], key.slice(nodeKey.length));
+        catch (e_6_1) { e_6 = { error: e_6_1 }; }
+        finally {
+            try {
+                if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+            }
+            finally { if (e_6) throw e_6.error; }
+        }
+        try {
+            for (var _e = __values(tree.keys()), _f = _e.next(); !_f.done; _f = _e.next()) {
+                var k = _f.value;
+                if (k !== LEAF && k.startsWith(key[0])) {
+                    var offset = commonPrefixOffset(key, k);
+                    var node_2 = new Map();
+                    node_2.set(k.slice(offset), tree.get(k));
+                    tree.set(key.slice(0, offset), node_2);
+                    tree.delete(k);
+                    return createPath(node_2, key.slice(offset));
+                }
+            }
+        }
+        catch (e_7_1) { e_7 = { error: e_7_1 }; }
+        finally {
+            try {
+                if (_f && !_f.done && (_b = _e.return)) _b.call(_e);
+            }
+            finally { if (e_7) throw e_7.error; }
+        }
+        var node = new Map();
+        tree.set(key, node);
+        return node;
     };
-    var commonPrefix = function (a, b, i, length, prefix) {
-        if (i === void 0) { i = 0; }
-        if (length === void 0) { length = Math.min(a.length, b.length); }
-        if (prefix === void 0) { prefix = ''; }
-        if (i >= length) {
-            return prefix;
+    var commonPrefixOffset = function (a, b) {
+        var length = Math.min(a.length, b.length);
+        for (var i = 0; i < length; i++) {
+            if (a[i] !== b[i])
+                return i;
         }
-        if (a[i] !== b[i]) {
-            return prefix;
-        }
-        return commonPrefix(a, b, i + 1, length, prefix + a[i]);
+        return length;
     };
     var remove = function (tree, key) {
         var _a = __read(trackDown(tree, key), 2), node = _a[0], path = _a[1];
         if (node === undefined) {
             return;
         }
-        delete node[LEAF];
-        var keys = Object.keys(node);
-        if (keys.length === 0) {
+        node.delete(LEAF);
+        if (node.size === 0) {
             cleanup(path);
         }
-        if (keys.length === 1) {
-            merge(path, keys[0], node[keys[0]]);
+        else if (node.size === 1) {
+            var _b = __read(node.entries().next().value, 2), key_1 = _b[0], value = _b[1];
+            merge(path, key_1, value);
         }
     };
     var cleanup = function (path) {
@@ -544,13 +644,15 @@
             return;
         }
         var _a = __read(last(path), 2), node = _a[0], key = _a[1];
-        delete node[key];
-        var keys = Object.keys(node);
-        if (keys.length === 0) {
+        node.delete(key);
+        if (node.size === 0) {
             cleanup(path.slice(0, -1));
         }
-        if (keys.length === 1 && keys[0] !== LEAF) {
-            merge(path.slice(0, -1), keys[0], node[keys[0]]);
+        else if (node.size === 1) {
+            var _b = __read(node.entries().next().value, 2), key_2 = _b[0], value = _b[1];
+            if (key_2 !== LEAF) {
+                merge(path.slice(0, -1), key_2, value);
+            }
         }
     };
     var merge = function (path, key, value) {
@@ -558,8 +660,8 @@
             return;
         }
         var _a = __read(last(path), 2), node = _a[0], nodeKey = _a[1];
-        node[nodeKey + key] = value;
-        delete node[nodeKey];
+        node.set(nodeKey + key, value);
+        node.delete(nodeKey);
     };
     var last = function (array) {
         return array[array.length - 1];

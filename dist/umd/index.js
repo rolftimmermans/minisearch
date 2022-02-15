@@ -83,7 +83,7 @@
     var TreeIterator = /** @class */ (function () {
         function TreeIterator(set, type) {
             var node = set._tree;
-            var keys = Object.keys(node);
+            var keys = Array.from(node.keys());
             this.set = set;
             this._type = type;
             this._path = keys.length > 0 ? [{ node: node, keys: keys }] : [];
@@ -101,7 +101,7 @@
             if (last$1(keys) === LEAF) {
                 return { done: false, value: this.result() };
             }
-            this._path.push({ node: node[last$1(keys)], keys: Object.keys(node[last$1(keys)]) });
+            this._path.push({ node: node.get(last$1(keys)), keys: Array.from(node.get(last$1(keys)).keys()) });
             return this.dive();
         };
         TreeIterator.prototype.backtrack = function () {
@@ -125,7 +125,7 @@
                 .join('');
         };
         TreeIterator.prototype.value = function () {
-            return last$1(this._path).node[LEAF];
+            return last$1(this._path).node.get(LEAF);
         };
         TreeIterator.prototype.result = function () {
             if (this._type === VALUES) {
@@ -157,22 +157,36 @@
         var results = {};
         var innerStack = [];
         var _loop_1 = function () {
-            var _a = stack.pop(), node_1 = _a.node, distance = _a.distance, key = _a.key, i = _a.i, edit = _a.edit;
-            Object.keys(node_1).forEach(function (k) {
+            var e_1, _a;
+            var _b = stack.pop(), node_1 = _b.node, distance = _b.distance, key = _b.key, i = _b.i, edit = _b.edit;
+            var _loop_2 = function (k) {
                 if (k === LEAF) {
                     var totDistance = distance + (query.length - i);
-                    var _a = __read(results[key] || [null, Infinity], 2), d = _a[1];
+                    var _e = __read(results[key] || [null, Infinity], 2), d = _e[1];
                     if (totDistance <= maxDistance && totDistance < d) {
-                        results[key] = [node_1[k], totDistance];
+                        results[key] = [node_1.get(k), totDistance];
                     }
                 }
                 else {
                     withinDistance(query, k, maxDistance - distance, i, edit, innerStack).forEach(function (_a) {
                         var d = _a.distance, i = _a.i, edit = _a.edit;
-                        stack.push({ node: node_1[k], distance: distance + d, key: key + k, i: i, edit: edit });
+                        stack.push({ node: node_1.get(k), distance: distance + d, key: key + k, i: i, edit: edit });
                     });
                 }
-            });
+            };
+            try {
+                for (var _c = (e_1 = void 0, __values(node_1.keys())), _d = _c.next(); !_d.done; _d = _c.next()) {
+                    var k = _d.value;
+                    _loop_2(k);
+                }
+            }
+            catch (e_1_1) { e_1 = { error: e_1_1 }; }
+            finally {
+                try {
+                    if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+                }
+                finally { if (e_1) throw e_1.error; }
+            }
         };
         while (stack.length > 0) {
             _loop_1();
@@ -238,8 +252,9 @@
          * mutable views of a map at a prefix.
          */
         function SearchableMap(tree, prefix) {
-            if (tree === void 0) { tree = {}; }
+            if (tree === void 0) { tree = new Map(); }
             if (prefix === void 0) { prefix = ''; }
+            this._size = undefined;
             this._tree = tree;
             this._prefix = prefix;
         }
@@ -272,33 +287,46 @@
          * @return A [[SearchableMap]] representing a mutable view of the original Map at the given prefix
          */
         SearchableMap.prototype.atPrefix = function (prefix) {
-            var _a;
+            var e_1, _a;
             if (!prefix.startsWith(this._prefix)) {
                 throw new Error('Mismatched prefix');
             }
             var _b = __read(trackDown(this._tree, prefix.slice(this._prefix.length)), 2), node = _b[0], path = _b[1];
             if (node === undefined) {
-                var _c = __read(last(path), 2), parentNode = _c[0], key_1 = _c[1];
-                var nodeKey = Object.keys(parentNode).find(function (k) { return k !== LEAF && k.startsWith(key_1); });
-                if (nodeKey !== undefined) {
-                    return new SearchableMap((_a = {}, _a[nodeKey.slice(key_1.length)] = parentNode[nodeKey], _a), prefix);
+                var _c = __read(last(path), 2), parentNode = _c[0], key = _c[1];
+                try {
+                    for (var _d = __values(parentNode.keys()), _e = _d.next(); !_e.done; _e = _d.next()) {
+                        var k = _e.value;
+                        if (k !== LEAF && k.startsWith(key)) {
+                            var node_1 = new Map();
+                            node_1.set(k.slice(key.length), parentNode.get(k));
+                            return new SearchableMap(node_1, prefix);
+                        }
+                    }
+                }
+                catch (e_1_1) { e_1 = { error: e_1_1 }; }
+                finally {
+                    try {
+                        if (_e && !_e.done && (_a = _d.return)) _a.call(_d);
+                    }
+                    finally { if (e_1) throw e_1.error; }
                 }
             }
-            return new SearchableMap(node || {}, prefix);
+            return new SearchableMap(node, prefix);
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/clear
          */
         SearchableMap.prototype.clear = function () {
-            delete this._size;
-            this._tree = {};
+            this._size = undefined;
+            this._tree.clear();
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/delete
          * @param key  Key to delete
          */
         SearchableMap.prototype.delete = function (key) {
-            delete this._size;
+            this._size = undefined;
             return remove(this._tree, key);
         };
         /**
@@ -311,21 +339,22 @@
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/forEach
          * @param fn  Iteration function
+         * @deprecated Use a `for (... of ...)` loop instead.
          */
         SearchableMap.prototype.forEach = function (fn) {
-            var e_1, _a;
+            var e_2, _a;
             try {
                 for (var _b = __values(this), _c = _b.next(); !_c.done; _c = _b.next()) {
                     var _d = __read(_c.value, 2), key = _d[0], value = _d[1];
                     fn(key, value, this);
                 }
             }
-            catch (e_1_1) { e_1 = { error: e_1_1 }; }
+            catch (e_2_1) { e_2 = { error: e_2_1 }; }
             finally {
                 try {
                     if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
                 }
-                finally { if (e_1) throw e_1.error; }
+                finally { if (e_2) throw e_2.error; }
             }
         };
         /**
@@ -367,7 +396,7 @@
          */
         SearchableMap.prototype.get = function (key) {
             var node = lookup(this._tree, key);
-            return node !== undefined ? node[LEAF] : undefined;
+            return node !== undefined ? node.get(LEAF) : undefined;
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/has
@@ -376,7 +405,7 @@
          */
         SearchableMap.prototype.has = function (key) {
             var node = lookup(this._tree, key);
-            return node !== undefined && node.hasOwnProperty(LEAF);
+            return node !== undefined && node.has(LEAF);
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/keys
@@ -395,9 +424,9 @@
             if (typeof key !== 'string') {
                 throw new Error('key must be a string');
             }
-            delete this._size;
+            this._size = undefined;
             var node = createPath(this._tree, key);
-            node[LEAF] = value;
+            node.set(LEAF, value);
             return this;
         };
         Object.defineProperty(SearchableMap.prototype, "size", {
@@ -405,13 +434,14 @@
              * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/size
              */
             get: function () {
-                var _this = this;
                 if (this._size) {
                     return this._size;
                 }
                 /** @ignore */
                 this._size = 0;
-                this.forEach(function () { _this._size += 1; });
+                var iter = this.entries();
+                while (!iter.next().done)
+                    this._size += 1;
                 return this._size;
             },
             enumerable: false,
@@ -437,10 +467,38 @@
             if (typeof key !== 'string') {
                 throw new Error('key must be a string');
             }
-            delete this._size;
+            this._size = undefined;
             var node = createPath(this._tree, key);
-            node[LEAF] = fn(node[LEAF]);
+            node.set(LEAF, fn(node.get(LEAF)));
             return this;
+        };
+        /**
+         * Fetches the value of the given key. If the value does not exist, calls the
+         * given function to create a new value, which is inserted at the given key
+         * and subsequently returned.
+         *
+         * ### Example:
+         *
+         * ```javascript
+         * const map = searchableMap.fetch('somekey', () => new Map())
+         * map.set('foo', 'bar')
+         * ```
+         *
+         * @param key  The key to update
+         * @param defaultValue  A function that creates a new value if the key does not exist
+         * @return The existing or new value at the given key
+         */
+        SearchableMap.prototype.fetch = function (key, initial) {
+            if (typeof key !== 'string') {
+                throw new Error('key must be a string');
+            }
+            this._size = undefined;
+            var node = createPath(this._tree, key);
+            var value = node.get(LEAF);
+            if (value === undefined) {
+                node.set(LEAF, value = initial());
+            }
+            return value;
         };
         /**
          * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/values
@@ -462,7 +520,7 @@
          * @return A new [[SearchableMap]] with the given entries
          */
         SearchableMap.from = function (entries) {
-            var e_2, _a;
+            var e_3, _a;
             var tree = new SearchableMap();
             try {
                 for (var entries_1 = __values(entries), entries_1_1 = entries_1.next(); !entries_1_1.done; entries_1_1 = entries_1.next()) {
@@ -470,12 +528,12 @@
                     tree.set(key, value);
                 }
             }
-            catch (e_2_1) { e_2 = { error: e_2_1 }; }
+            catch (e_3_1) { e_3 = { error: e_3_1 }; }
             finally {
                 try {
                     if (entries_1_1 && !entries_1_1.done && (_a = entries_1.return)) _a.call(entries_1);
                 }
-                finally { if (e_2) throw e_2.error; }
+                finally { if (e_3) throw e_3.error; }
             }
             return tree;
         };
@@ -491,73 +549,115 @@
         return SearchableMap;
     }());
     var trackDown = function (tree, key, path) {
+        var e_4, _a;
         if (path === void 0) { path = []; }
         if (key.length === 0 || tree == null) {
             return [tree, path];
         }
-        var nodeKey = Object.keys(tree).find(function (k) { return k !== LEAF && key.startsWith(k); });
-        if (nodeKey === undefined) {
-            path.push([tree, key]); // performance: update in place
-            return trackDown(undefined, '', path);
+        try {
+            for (var _b = __values(tree.keys()), _c = _b.next(); !_c.done; _c = _b.next()) {
+                var k = _c.value;
+                if (k !== LEAF && key.startsWith(k)) {
+                    path.push([tree, k]); // performance: update in place
+                    return trackDown(tree.get(k), key.slice(k.length), path);
+                }
+            }
         }
-        path.push([tree, nodeKey]); // performance: update in place
-        return trackDown(tree[nodeKey], key.slice(nodeKey.length), path);
+        catch (e_4_1) { e_4 = { error: e_4_1 }; }
+        finally {
+            try {
+                if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+            }
+            finally { if (e_4) throw e_4.error; }
+        }
+        path.push([tree, key]); // performance: update in place
+        return trackDown(undefined, '', path);
     };
     var lookup = function (tree, key) {
+        var e_5, _a;
         if (key.length === 0 || tree == null) {
             return tree;
         }
-        var nodeKey = Object.keys(tree).find(function (k) { return k !== LEAF && key.startsWith(k); });
-        if (nodeKey === undefined) {
-            return undefined;
+        try {
+            for (var _b = __values(tree.keys()), _c = _b.next(); !_c.done; _c = _b.next()) {
+                var k = _c.value;
+                if (k !== LEAF && key.startsWith(k)) {
+                    return lookup(tree.get(k), key.slice(k.length));
+                }
+            }
         }
-        return lookup(tree[nodeKey], key.slice(nodeKey.length));
+        catch (e_5_1) { e_5 = { error: e_5_1 }; }
+        finally {
+            try {
+                if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+            }
+            finally { if (e_5) throw e_5.error; }
+        }
     };
     var createPath = function (tree, key) {
-        var _a;
+        var e_6, _a, e_7, _b;
         if (key.length === 0 || tree == null) {
             return tree;
         }
-        var nodeKey = Object.keys(tree).find(function (k) { return k !== LEAF && key.startsWith(k); });
-        if (nodeKey === undefined) {
-            var toSplit = Object.keys(tree).find(function (k) { return k !== LEAF && k.startsWith(key[0]); });
-            if (toSplit === undefined) {
-                tree[key] = {};
+        try {
+            for (var _c = __values(tree.keys()), _d = _c.next(); !_d.done; _d = _c.next()) {
+                var k = _d.value;
+                if (k !== LEAF && key.startsWith(k)) {
+                    return createPath(tree.get(k), key.slice(k.length));
+                }
             }
-            else {
-                var prefix = commonPrefix(key, toSplit);
-                tree[prefix] = (_a = {}, _a[toSplit.slice(prefix.length)] = tree[toSplit], _a);
-                delete tree[toSplit];
-                return createPath(tree[prefix], key.slice(prefix.length));
-            }
-            return tree[key];
         }
-        return createPath(tree[nodeKey], key.slice(nodeKey.length));
+        catch (e_6_1) { e_6 = { error: e_6_1 }; }
+        finally {
+            try {
+                if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+            }
+            finally { if (e_6) throw e_6.error; }
+        }
+        try {
+            for (var _e = __values(tree.keys()), _f = _e.next(); !_f.done; _f = _e.next()) {
+                var k = _f.value;
+                if (k !== LEAF && k.startsWith(key[0])) {
+                    var offset = commonPrefixOffset(key, k);
+                    var node_2 = new Map();
+                    node_2.set(k.slice(offset), tree.get(k));
+                    tree.set(key.slice(0, offset), node_2);
+                    tree.delete(k);
+                    return createPath(node_2, key.slice(offset));
+                }
+            }
+        }
+        catch (e_7_1) { e_7 = { error: e_7_1 }; }
+        finally {
+            try {
+                if (_f && !_f.done && (_b = _e.return)) _b.call(_e);
+            }
+            finally { if (e_7) throw e_7.error; }
+        }
+        var node = new Map();
+        tree.set(key, node);
+        return node;
     };
-    var commonPrefix = function (a, b, i, length, prefix) {
-        if (i === void 0) { i = 0; }
-        if (length === void 0) { length = Math.min(a.length, b.length); }
-        if (prefix === void 0) { prefix = ''; }
-        if (i >= length) {
-            return prefix;
+    var commonPrefixOffset = function (a, b) {
+        var length = Math.min(a.length, b.length);
+        for (var i = 0; i < length; i++) {
+            if (a[i] !== b[i])
+                return i;
         }
-        if (a[i] !== b[i]) {
-            return prefix;
-        }
-        return commonPrefix(a, b, i + 1, length, prefix + a[i]);
+        return length;
     };
     var remove = function (tree, key) {
         var _a = __read(trackDown(tree, key), 2), node = _a[0], path = _a[1];
         if (node === undefined) {
             return;
         }
-        delete node[LEAF];
-        var keys = Object.keys(node);
-        if (keys.length === 0) {
+        node.delete(LEAF);
+        if (node.size === 0) {
             cleanup(path);
         }
-        if (keys.length === 1) {
-            merge(path, keys[0], node[keys[0]]);
+        else if (node.size === 1) {
+            var _b = __read(node.entries().next().value, 2), key_1 = _b[0], value = _b[1];
+            merge(path, key_1, value);
         }
     };
     var cleanup = function (path) {
@@ -565,13 +665,15 @@
             return;
         }
         var _a = __read(last(path), 2), node = _a[0], key = _a[1];
-        delete node[key];
-        var keys = Object.keys(node);
-        if (keys.length === 0) {
+        node.delete(key);
+        if (node.size === 0) {
             cleanup(path.slice(0, -1));
         }
-        if (keys.length === 1 && keys[0] !== LEAF) {
-            merge(path.slice(0, -1), keys[0], node[keys[0]]);
+        else if (node.size === 1) {
+            var _b = __read(node.entries().next().value, 2), key_2 = _b[0], value = _b[1];
+            if (key_2 !== LEAF) {
+                merge(path.slice(0, -1), key_2, value);
+            }
         }
     };
     var merge = function (path, key, value) {
@@ -579,8 +681,8 @@
             return;
         }
         var _a = __read(last(path), 2), node = _a[0], nodeKey = _a[1];
-        node[nodeKey + key] = value;
-        delete node[nodeKey];
+        node.set(nodeKey + key, value);
+        node.delete(nodeKey);
     };
     var last = function (array) {
         return array[array.length - 1];
@@ -715,12 +817,16 @@
             this._options = __assign(__assign(__assign({}, defaultOptions), options), { searchOptions: __assign(__assign({}, defaultSearchOptions), (options.searchOptions || {})) });
             this._index = new SearchableMap();
             this._documentCount = 0;
-            this._documentIds = {};
+            this._documentIds = new Map();
+            // Fields are defined during initialization, don't change, are few in
+            // number, rarely need iterating over, and have string keys. Therefore in
+            // this case an object is a better candidate than a Map to store the mapping
+            // from field key to ID.
             this._fieldIds = {};
-            this._fieldLength = {};
-            this._averageFieldLength = {};
+            this._fieldLength = new Map();
+            this._averageFieldLength = [];
             this._nextId = 0;
-            this._storedFields = {};
+            this._storedFields = new Map();
             this.addFields(this._options.fields);
         }
         /**
@@ -729,28 +835,48 @@
          * @param document  The document to be indexed
          */
         MiniSearch.prototype.add = function (document) {
-            var _this = this;
-            var _a = this._options, extractField = _a.extractField, tokenize = _a.tokenize, processTerm = _a.processTerm, fields = _a.fields, idField = _a.idField;
+            var e_1, _a, e_2, _b;
+            var _c = this._options, extractField = _c.extractField, tokenize = _c.tokenize, processTerm = _c.processTerm, fields = _c.fields, idField = _c.idField;
             var id = extractField(document, idField);
             if (id == null) {
                 throw new Error("MiniSearch: document does not have ID field \"".concat(idField, "\""));
             }
             var shortDocumentId = this.addDocumentId(id);
             this.saveStoredFields(shortDocumentId, document);
-            fields.forEach(function (field) {
-                var fieldValue = extractField(document, field);
-                if (fieldValue == null) {
-                    return;
-                }
-                var tokens = tokenize(fieldValue.toString(), field);
-                _this.addFieldLength(shortDocumentId, _this._fieldIds[field], _this.documentCount - 1, tokens.length);
-                tokens.forEach(function (term) {
-                    var processedTerm = processTerm(term, field);
-                    if (processedTerm) {
-                        _this.addTerm(_this._fieldIds[field], shortDocumentId, processedTerm);
+            try {
+                for (var fields_1 = __values(fields), fields_1_1 = fields_1.next(); !fields_1_1.done; fields_1_1 = fields_1.next()) {
+                    var field = fields_1_1.value;
+                    var fieldValue = extractField(document, field);
+                    if (fieldValue == null)
+                        continue;
+                    var tokens = tokenize(fieldValue.toString(), field);
+                    var fieldId = this._fieldIds[field];
+                    this.addFieldLength(shortDocumentId, fieldId, this.documentCount - 1, tokens.length);
+                    try {
+                        for (var tokens_1 = (e_2 = void 0, __values(tokens)), tokens_1_1 = tokens_1.next(); !tokens_1_1.done; tokens_1_1 = tokens_1.next()) {
+                            var term = tokens_1_1.value;
+                            var processedTerm = processTerm(term, field);
+                            if (processedTerm) {
+                                this.addTerm(fieldId, shortDocumentId, processedTerm);
+                            }
+                        }
                     }
-                });
-            });
+                    catch (e_2_1) { e_2 = { error: e_2_1 }; }
+                    finally {
+                        try {
+                            if (tokens_1_1 && !tokens_1_1.done && (_b = tokens_1.return)) _b.call(tokens_1);
+                        }
+                        finally { if (e_2) throw e_2.error; }
+                    }
+                }
+            }
+            catch (e_1_1) { e_1 = { error: e_1_1 }; }
+            finally {
+                try {
+                    if (fields_1_1 && !fields_1_1.done && (_a = fields_1.return)) _a.call(fields_1);
+                }
+                finally { if (e_1) throw e_1.error; }
+            }
         };
         /**
          * Adds all the given documents to the index
@@ -758,8 +884,20 @@
          * @param documents  An array of documents to be indexed
          */
         MiniSearch.prototype.addAll = function (documents) {
-            var _this = this;
-            documents.forEach(function (document) { return _this.add(document); });
+            var e_3, _a;
+            try {
+                for (var documents_1 = __values(documents), documents_1_1 = documents_1.next(); !documents_1_1.done; documents_1_1 = documents_1.next()) {
+                    var document_1 = documents_1_1.value;
+                    this.add(document_1);
+                }
+            }
+            catch (e_3_1) { e_3 = { error: e_3_1 }; }
+            finally {
+                try {
+                    if (documents_1_1 && !documents_1_1.done && (_a = documents_1.return)) _a.call(documents_1);
+                }
+                finally { if (e_3) throw e_3.error; }
+            }
         };
         /**
          * Adds all the given documents to the index asynchronously.
@@ -808,38 +946,66 @@
          * @param document  The document to be removed
          */
         MiniSearch.prototype.remove = function (document) {
-            var _this = this;
-            var _a = this._options, tokenize = _a.tokenize, processTerm = _a.processTerm, extractField = _a.extractField, fields = _a.fields, idField = _a.idField;
+            var e_4, _a, e_5, _b, e_6, _c;
+            var _d = this._options, tokenize = _d.tokenize, processTerm = _d.processTerm, extractField = _d.extractField, fields = _d.fields, idField = _d.idField;
             var id = extractField(document, idField);
             if (id == null) {
                 throw new Error("MiniSearch: document does not have ID field \"".concat(idField, "\""));
             }
-            var _b = __read(Object.entries(this._documentIds)
-                .find(function (_a) {
-                var _b = __read(_a, 2); _b[0]; var longId = _b[1];
-                return id === longId;
-            }) || [], 1), shortDocumentId = _b[0];
-            if (shortDocumentId == null) {
-                throw new Error("MiniSearch: cannot remove document with ID ".concat(id, ": it is not in the index"));
-            }
-            fields.forEach(function (field) {
-                var fieldValue = extractField(document, field);
-                if (fieldValue == null) {
-                    return;
-                }
-                var tokens = tokenize(fieldValue.toString(), field);
-                tokens.forEach(function (term) {
-                    var processedTerm = processTerm(term, field);
-                    if (processedTerm) {
-                        _this.removeTerm(_this._fieldIds[field], shortDocumentId, processedTerm);
+            try {
+                for (var _e = __values(this._documentIds), _f = _e.next(); !_f.done; _f = _e.next()) {
+                    var _g = __read(_f.value, 2), shortId = _g[0], longId = _g[1];
+                    if (id === longId) {
+                        try {
+                            for (var fields_2 = (e_5 = void 0, __values(fields)), fields_2_1 = fields_2.next(); !fields_2_1.done; fields_2_1 = fields_2.next()) {
+                                var field = fields_2_1.value;
+                                var fieldValue = extractField(document, field);
+                                if (fieldValue == null)
+                                    continue;
+                                var tokens = tokenize(fieldValue.toString(), field);
+                                var fieldId = this._fieldIds[field];
+                                try {
+                                    for (var tokens_2 = (e_6 = void 0, __values(tokens)), tokens_2_1 = tokens_2.next(); !tokens_2_1.done; tokens_2_1 = tokens_2.next()) {
+                                        var term = tokens_2_1.value;
+                                        var processedTerm = processTerm(term, field);
+                                        if (processedTerm) {
+                                            this.removeTerm(fieldId, shortId, processedTerm);
+                                        }
+                                    }
+                                }
+                                catch (e_6_1) { e_6 = { error: e_6_1 }; }
+                                finally {
+                                    try {
+                                        if (tokens_2_1 && !tokens_2_1.done && (_c = tokens_2.return)) _c.call(tokens_2);
+                                    }
+                                    finally { if (e_6) throw e_6.error; }
+                                }
+                                this.removeFieldLength(shortId, fieldId, this.documentCount, tokens.length);
+                            }
+                        }
+                        catch (e_5_1) { e_5 = { error: e_5_1 }; }
+                        finally {
+                            try {
+                                if (fields_2_1 && !fields_2_1.done && (_b = fields_2.return)) _b.call(fields_2);
+                            }
+                            finally { if (e_5) throw e_5.error; }
+                        }
+                        this._storedFields.delete(shortId);
+                        this._documentIds.delete(shortId);
+                        this._fieldLength.delete(shortId);
+                        this._documentCount -= 1;
+                        return;
                     }
-                });
-                _this.removeFieldLength(shortDocumentId, _this._fieldIds[field], _this.documentCount, tokens.length);
-            });
-            delete this._storedFields[shortDocumentId];
-            delete this._documentIds[shortDocumentId];
-            delete this._fieldLength[shortDocumentId];
-            this._documentCount -= 1;
+                }
+            }
+            catch (e_4_1) { e_4 = { error: e_4_1 }; }
+            finally {
+                try {
+                    if (_f && !_f.done && (_a = _e.return)) _a.call(_e);
+                }
+                finally { if (e_4) throw e_4.error; }
+            }
+            throw new Error("MiniSearch: cannot remove document with ID ".concat(id, ": it is not in the index"));
         };
         /**
          * Removes all the given documents from the index. If called with no arguments,
@@ -851,9 +1017,21 @@
          * documents.
          */
         MiniSearch.prototype.removeAll = function (documents) {
-            var _this = this;
+            var e_7, _a;
             if (documents) {
-                documents.forEach(function (document) { return _this.remove(document); });
+                try {
+                    for (var documents_2 = __values(documents), documents_2_1 = documents_2.next(); !documents_2_1.done; documents_2_1 = documents_2.next()) {
+                        var document_2 = documents_2_1.value;
+                        this.remove(document_2);
+                    }
+                }
+                catch (e_7_1) { e_7 = { error: e_7_1 }; }
+                finally {
+                    try {
+                        if (documents_2_1 && !documents_2_1.done && (_a = documents_2.return)) _a.call(documents_2);
+                    }
+                    finally { if (e_7) throw e_7.error; }
+                }
             }
             else if (arguments.length > 0) {
                 throw new Error('Expected documents to be present. Omit the argument to remove all documents.');
@@ -861,10 +1039,10 @@
             else {
                 this._index = new SearchableMap();
                 this._documentCount = 0;
-                this._documentIds = {};
-                this._fieldLength = {};
-                this._averageFieldLength = {};
-                this._storedFields = {};
+                this._documentIds = new Map();
+                this._fieldLength = new Map();
+                this._averageFieldLength = [];
+                this._storedFields = new Map();
                 this._nextId = 0;
             }
         };
@@ -1007,29 +1185,38 @@
          * @param options  Search options. Each option, if not given, defaults to the corresponding value of `searchOptions` given to the constructor, or to the library default.
          */
         MiniSearch.prototype.search = function (query, searchOptions) {
-            var _this = this;
+            var e_8, _a;
             if (searchOptions === void 0) { searchOptions = {}; }
             var combinedResults = this.executeQuery(query, searchOptions);
-            return Object.entries(combinedResults)
-                .reduce(function (results, _a) {
-                var _b = __read(_a, 2), docId = _b[0], _c = _b[1], score = _c.score, match = _c.match, terms = _c.terms;
-                var result = {
-                    id: _this._documentIds[docId],
-                    terms: uniq(terms),
-                    score: score,
-                    match: match
-                };
-                Object.assign(result, _this._storedFields[docId]);
-                if (searchOptions.filter == null || searchOptions.filter(result)) {
-                    results.push(result);
+            var results = [];
+            try {
+                for (var combinedResults_1 = __values(combinedResults), combinedResults_1_1 = combinedResults_1.next(); !combinedResults_1_1.done; combinedResults_1_1 = combinedResults_1.next()) {
+                    var _b = __read(combinedResults_1_1.value, 2), docId = _b[0], _c = _b[1], score_1 = _c.score, match = _c.match, terms = _c.terms;
+                    var result = {
+                        id: this._documentIds.get(docId),
+                        terms: uniq(terms),
+                        score: score_1,
+                        match: match
+                    };
+                    Object.assign(result, this._storedFields.get(docId));
+                    if (searchOptions.filter == null || searchOptions.filter(result)) {
+                        results.push(result);
+                    }
                 }
-                return results;
-            }, [])
-                .sort(function (_a, _b) {
+            }
+            catch (e_8_1) { e_8 = { error: e_8_1 }; }
+            finally {
+                try {
+                    if (combinedResults_1_1 && !combinedResults_1_1.done && (_a = combinedResults_1.return)) _a.call(combinedResults_1);
+                }
+                finally { if (e_8) throw e_8.error; }
+            }
+            results.sort(function (_a, _b) {
                 var a = _a.score;
                 var b = _b.score;
                 return a < b ? 1 : -1;
             });
+            return results;
         };
         /**
          * Provide suggestions for the given search query
@@ -1085,30 +1272,51 @@
          * @return  A sorted array of suggestions sorted by relevance score.
          */
         MiniSearch.prototype.autoSuggest = function (queryString, options) {
+            var e_9, _a, e_10, _b;
             if (options === void 0) { options = {}; }
             options = __assign(__assign({}, defaultAutoSuggestOptions), options);
-            var suggestions = this.search(queryString, options).reduce(function (suggestions, _a) {
-                var score = _a.score, terms = _a.terms;
-                var phrase = terms.join(' ');
-                if (suggestions[phrase] == null) {
-                    suggestions[phrase] = { score: score, terms: terms, count: 1 };
+            var suggestions = new Map();
+            try {
+                for (var _c = __values(this.search(queryString, options)), _d = _c.next(); !_d.done; _d = _c.next()) {
+                    var _e = _d.value, score_2 = _e.score, terms = _e.terms;
+                    var phrase = terms.join(' ');
+                    var suggestion = suggestions.get(phrase);
+                    if (suggestion != null) {
+                        suggestion.score += score_2;
+                        suggestion.count += 1;
+                    }
+                    else {
+                        suggestions.set(phrase, { score: score_2, terms: terms, count: 1 });
+                    }
                 }
-                else {
-                    suggestions[phrase].score += score;
-                    suggestions[phrase].count += 1;
+            }
+            catch (e_9_1) { e_9 = { error: e_9_1 }; }
+            finally {
+                try {
+                    if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
                 }
-                return suggestions;
-            }, {});
-            return Object.entries(suggestions)
-                .map(function (_a) {
-                var _b = __read(_a, 2), suggestion = _b[0], _c = _b[1], score = _c.score, terms = _c.terms, count = _c.count;
-                return ({ suggestion: suggestion, terms: terms, score: score / count });
-            })
-                .sort(function (_a, _b) {
+                finally { if (e_9) throw e_9.error; }
+            }
+            var results = [];
+            try {
+                for (var suggestions_1 = __values(suggestions), suggestions_1_1 = suggestions_1.next(); !suggestions_1_1.done; suggestions_1_1 = suggestions_1.next()) {
+                    var _f = __read(suggestions_1_1.value, 2), suggestion = _f[0], _g = _f[1], score_3 = _g.score, terms = _g.terms, count = _g.count;
+                    results.push({ suggestion: suggestion, terms: terms, score: score_3 / count });
+                }
+            }
+            catch (e_10_1) { e_10 = { error: e_10_1 }; }
+            finally {
+                try {
+                    if (suggestions_1_1 && !suggestions_1_1.done && (_b = suggestions_1.return)) _b.call(suggestions_1);
+                }
+                finally { if (e_10) throw e_10.error; }
+            }
+            results.sort(function (_a, _b) {
                 var a = _a.score;
                 var b = _b.score;
                 return a < b ? 1 : -1;
             });
+            return results;
         };
         Object.defineProperty(MiniSearch.prototype, "documentCount", {
             /**
@@ -1182,15 +1390,14 @@
         MiniSearch.loadJS = function (js, options) {
             var index = js.index, documentCount = js.documentCount, nextId = js.nextId, documentIds = js.documentIds, fieldIds = js.fieldIds, fieldLength = js.fieldLength, averageFieldLength = js.averageFieldLength, storedFields = js.storedFields;
             var miniSearch = new MiniSearch(options);
-            miniSearch._index = new SearchableMap(index._tree, index._prefix);
+            miniSearch._index = new SearchableMap(objectToTree(index._tree), index._prefix);
             miniSearch._documentCount = documentCount;
             miniSearch._nextId = nextId;
-            miniSearch._documentIds = documentIds;
+            miniSearch._documentIds = objectToNumericMap(documentIds);
             miniSearch._fieldIds = fieldIds;
-            miniSearch._fieldLength = fieldLength;
+            miniSearch._fieldLength = objectToNumericMap(fieldLength);
             miniSearch._averageFieldLength = averageFieldLength;
-            miniSearch._fieldIds = fieldIds;
-            miniSearch._storedFields = storedFields || {};
+            miniSearch._storedFields = objectToNumericMap(storedFields);
             return miniSearch;
         };
         /**
@@ -1230,33 +1437,54 @@
          * @ignore
          */
         MiniSearch.prototype.executeQuerySpec = function (query, searchOptions) {
-            var _this = this;
+            var e_11, _a, e_12, _b;
             var options = __assign(__assign({}, this._options.searchOptions), searchOptions);
             var boosts = (options.fields || this._options.fields).reduce(function (boosts, field) {
                 var _a;
                 return (__assign(__assign({}, boosts), (_a = {}, _a[field] = getOwnProperty(boosts, field) || 1, _a)));
             }, options.boost || {});
             var boostDocument = options.boostDocument, weights = options.weights;
-            var _a = __assign(__assign({}, defaultSearchOptions.weights), weights), fuzzyWeight = _a.fuzzy, prefixWeight = _a.prefix;
+            var _c = __assign(__assign({}, defaultSearchOptions.weights), weights), fuzzyWeight = _c.fuzzy, prefixWeight = _c.prefix;
             var exactMatch = this.termResults(query.term, boosts, boostDocument, this._index.get(query.term));
             if (!query.fuzzy && !query.prefix) {
                 return exactMatch;
             }
             var results = [exactMatch];
             if (query.prefix) {
-                this._index.atPrefix(query.term).forEach(function (term, data) {
-                    var weightedDistance = (0.3 * (term.length - query.term.length)) / term.length;
-                    results.push(_this.termResults(term, boosts, boostDocument, data, prefixWeight, weightedDistance));
-                });
+                try {
+                    for (var _d = __values(this._index.atPrefix(query.term)), _e = _d.next(); !_e.done; _e = _d.next()) {
+                        var _f = __read(_e.value, 2), term = _f[0], data = _f[1];
+                        var weightedDistance = (0.3 * (term.length - query.term.length)) / term.length;
+                        results.push(this.termResults(term, boosts, boostDocument, data, prefixWeight, weightedDistance));
+                    }
+                }
+                catch (e_11_1) { e_11 = { error: e_11_1 }; }
+                finally {
+                    try {
+                        if (_e && !_e.done && (_a = _d.return)) _a.call(_d);
+                    }
+                    finally { if (e_11) throw e_11.error; }
+                }
             }
             if (query.fuzzy) {
                 var fuzzy = (query.fuzzy === true) ? 0.2 : query.fuzzy;
                 var maxDistance = fuzzy < 1 ? Math.round(query.term.length * fuzzy) : fuzzy;
-                Object.entries(this._index.fuzzyGet(query.term, maxDistance)).forEach(function (_a) {
-                    var _b = __read(_a, 2), term = _b[0], _c = __read(_b[1], 2), data = _c[0], distance = _c[1];
-                    var weightedDistance = distance / term.length;
-                    results.push(_this.termResults(term, boosts, boostDocument, data, fuzzyWeight, weightedDistance));
-                });
+                var fuzzyResults = this._index.fuzzyGet(query.term, maxDistance);
+                try {
+                    for (var _g = __values(Object.keys(fuzzyResults)), _h = _g.next(); !_h.done; _h = _g.next()) {
+                        var term = _h.value;
+                        var _j = __read(fuzzyResults[term], 2), data = _j[0], distance = _j[1];
+                        var weightedDistance = distance / term.length;
+                        results.push(this.termResults(term, boosts, boostDocument, data, fuzzyWeight, weightedDistance));
+                    }
+                }
+                catch (e_12_1) { e_12 = { error: e_12_1 }; }
+                finally {
+                    try {
+                        if (_h && !_h.done && (_b = _g.return)) _b.call(_g);
+                    }
+                    finally { if (e_12) throw e_12.error; }
+                }
             }
             return results.reduce(combinators[OR]);
         };
@@ -1266,10 +1494,10 @@
         MiniSearch.prototype.combineResults = function (results, combineWith) {
             if (combineWith === void 0) { combineWith = OR; }
             if (results.length === 0) {
-                return {};
+                return new Map();
             }
             var operator = combineWith.toLowerCase();
-            return results.reduce(combinators[operator]) || {};
+            return results.reduce(combinators[operator]) || new Map();
         };
         /**
          * Allows serialization of the index to JSON, to possibly store it and later
@@ -1297,59 +1525,88 @@
          */
         MiniSearch.prototype.toJSON = function () {
             return {
-                index: this._index,
+                index: { _tree: treeToObject(this._index._tree), _prefix: this._index._prefix },
                 documentCount: this._documentCount,
                 nextId: this._nextId,
-                documentIds: this._documentIds,
+                documentIds: Object.fromEntries(this._documentIds),
                 fieldIds: this._fieldIds,
-                fieldLength: this._fieldLength,
+                fieldLength: Object.fromEntries(this._fieldLength),
                 averageFieldLength: this._averageFieldLength,
-                storedFields: this._storedFields
+                storedFields: Object.fromEntries(this._storedFields)
             };
         };
         /**
          * @ignore
          */
         MiniSearch.prototype.termResults = function (term, boosts, boostDocument, indexData, weight, editDistance) {
-            var _this = this;
+            var e_13, _a, e_14, _b;
             if (editDistance === void 0) { editDistance = 0; }
             if (indexData == null) {
-                return {};
+                return new Map();
             }
-            return Object.entries(boosts).reduce(function (results, _a) {
-                var _b = __read(_a, 2), field = _b[0], boost = _b[1];
-                var fieldId = _this._fieldIds[field];
-                var _c = indexData[fieldId] || { ds: {} }, df = _c.df, ds = _c.ds;
-                Object.entries(ds).forEach(function (_a) {
-                    var _b = __read(_a, 2), documentId = _b[0], tf = _b[1];
-                    var docBoost = boostDocument ? boostDocument(_this._documentIds[documentId], term) : 1;
-                    if (!docBoost) {
-                        return;
+            var results = new Map();
+            try {
+                for (var _c = __values(Object.keys(boosts)), _d = _c.next(); !_d.done; _d = _c.next()) {
+                    var field = _d.value;
+                    var boost = boosts[field];
+                    var fieldId = this._fieldIds[field];
+                    var entry = indexData.get(fieldId);
+                    if (entry == null)
+                        continue;
+                    try {
+                        for (var _e = (e_14 = void 0, __values(entry.ds)), _f = _e.next(); !_f.done; _f = _e.next()) {
+                            var _g = __read(_f.value, 2), documentId = _g[0], tf = _g[1];
+                            var docBoost = boostDocument ? boostDocument(this._documentIds.get(documentId), term) : 1;
+                            if (!docBoost)
+                                continue;
+                            var normalizedLength = this._fieldLength.get(documentId)[fieldId] / this._averageFieldLength[fieldId];
+                            var result = results.get(documentId);
+                            if (!result) {
+                                result = { score: 0, match: {}, terms: [] };
+                                results.set(documentId, result);
+                            }
+                            result.terms.push(term);
+                            result.match[term] = getOwnProperty(results.get(documentId).match, term) || [];
+                            result.score += docBoost * score(tf, entry.df, this._documentCount, normalizedLength, boost, editDistance);
+                            result.match[term].push(field);
+                        }
                     }
-                    var normalizedLength = _this._fieldLength[documentId][fieldId] / _this._averageFieldLength[fieldId];
-                    results[documentId] = results[documentId] || { score: 0, match: {}, terms: [] };
-                    results[documentId].terms.push(term);
-                    results[documentId].match[term] = getOwnProperty(results[documentId].match, term) || [];
-                    results[documentId].score += docBoost * score(tf, df, _this._documentCount, normalizedLength, boost, editDistance);
-                    results[documentId].match[term].push(field);
-                });
-                return results;
-            }, {});
+                    catch (e_14_1) { e_14 = { error: e_14_1 }; }
+                    finally {
+                        try {
+                            if (_f && !_f.done && (_b = _e.return)) _b.call(_e);
+                        }
+                        finally { if (e_14) throw e_14.error; }
+                    }
+                }
+            }
+            catch (e_13_1) { e_13 = { error: e_13_1 }; }
+            finally {
+                try {
+                    if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+                }
+                finally { if (e_13) throw e_13.error; }
+            }
+            return results;
         };
         /**
          * @ignore
          */
         MiniSearch.prototype.addTerm = function (fieldId, documentId, term) {
-            this._index.update(term, function (indexData) {
-                var _a;
-                indexData = indexData || {};
-                var fieldIndex = indexData[fieldId] || { df: 0, ds: {} };
-                if (fieldIndex.ds[documentId] == null) {
+            var indexData = this._index.fetch(term, createMap);
+            var fieldIndex = indexData.get(fieldId);
+            if (fieldIndex == null) {
+                fieldIndex = { df: 1, ds: new Map() };
+                fieldIndex.ds.set(documentId, 1);
+                indexData.set(fieldId, fieldIndex);
+            }
+            else {
+                var docs = fieldIndex.ds.get(documentId);
+                if (docs == null) {
                     fieldIndex.df += 1;
                 }
-                fieldIndex.ds[documentId] = (fieldIndex.ds[documentId] || 0) + 1;
-                return __assign(__assign({}, indexData), (_a = {}, _a[fieldId] = fieldIndex, _a));
-            });
+                fieldIndex.ds.set(documentId, (docs || 0) + 1);
+            }
         };
         /**
          * @ignore
@@ -1361,27 +1618,27 @@
                 return;
             }
             this._index.update(term, function (indexData) {
-                var _a;
-                var fieldIndex = indexData[fieldId];
-                if (fieldIndex == null || fieldIndex.ds[documentId] == null) {
+                var fieldIndex = indexData.get(fieldId);
+                if (fieldIndex == null || fieldIndex.ds.get(documentId) == null) {
                     _this.warnDocumentChanged(documentId, fieldId, term);
                     return indexData;
                 }
-                if (fieldIndex.ds[documentId] <= 1) {
+                if (fieldIndex.ds.get(documentId) <= 1) {
                     if (fieldIndex.df <= 1) {
-                        delete indexData[fieldId];
+                        indexData.delete(fieldId);
                         return indexData;
                     }
                     fieldIndex.df -= 1;
                 }
-                if (fieldIndex.ds[documentId] <= 1) {
-                    delete fieldIndex.ds[documentId];
+                if (fieldIndex.ds.get(documentId) <= 1) {
+                    fieldIndex.ds.delete(documentId);
                     return indexData;
                 }
-                fieldIndex.ds[documentId] -= 1;
-                return __assign(__assign({}, indexData), (_a = {}, _a[fieldId] = fieldIndex, _a));
+                fieldIndex.ds.set(documentId, fieldIndex.ds.get(documentId) - 1);
+                indexData.set(fieldId, fieldIndex);
+                return indexData;
             });
-            if (Object.keys(this._index.get(term)).length === 0) {
+            if (this._index.get(term).size === 0) {
                 this._index.delete(term);
             }
         };
@@ -1389,21 +1646,33 @@
          * @ignore
          */
         MiniSearch.prototype.warnDocumentChanged = function (shortDocumentId, fieldId, term) {
+            var e_15, _a;
             if (console == null || console.warn == null) {
                 return;
             }
-            var fieldName = Object.entries(this._fieldIds).find(function (_a) {
-                var _b = __read(_a, 2); _b[0]; var id = _b[1];
-                return id === fieldId;
-            })[0];
-            console.warn("MiniSearch: document with ID ".concat(this._documentIds[shortDocumentId], " has changed before removal: term \"").concat(term, "\" was not present in field \"").concat(fieldName, "\". Removing a document after it has changed can corrupt the index!"));
+            try {
+                for (var _b = __values(Object.keys(this._fieldIds)), _c = _b.next(); !_c.done; _c = _b.next()) {
+                    var fieldName = _c.value;
+                    if (this._fieldIds[fieldName] === fieldId) {
+                        console.warn("MiniSearch: document with ID ".concat(this._documentIds.get(shortDocumentId), " has changed before removal: term \"").concat(term, "\" was not present in field \"").concat(fieldName, "\". Removing a document after it has changed can corrupt the index!"));
+                        return;
+                    }
+                }
+            }
+            catch (e_15_1) { e_15 = { error: e_15_1 }; }
+            finally {
+                try {
+                    if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+                }
+                finally { if (e_15) throw e_15.error; }
+            }
         };
         /**
          * @ignore
          */
         MiniSearch.prototype.addDocumentId = function (documentId) {
-            var shortDocumentId = this._nextId.toString(36);
-            this._documentIds[shortDocumentId] = documentId;
+            var shortDocumentId = this._nextId;
+            this._documentIds.set(shortDocumentId, documentId);
             this._documentCount += 1;
             this._nextId += 1;
             return shortDocumentId;
@@ -1412,17 +1681,20 @@
          * @ignore
          */
         MiniSearch.prototype.addFields = function (fields) {
-            var _this = this;
-            fields.forEach(function (field, i) { _this._fieldIds[field] = i; });
+            for (var i = 0; i < fields.length; i++) {
+                this._fieldIds[fields[i]] = i;
+            }
         };
         /**
          * @ignore
          */
         MiniSearch.prototype.addFieldLength = function (documentId, fieldId, count, length) {
-            this._averageFieldLength[fieldId] = this._averageFieldLength[fieldId] || 0;
-            var totalLength = (this._averageFieldLength[fieldId] * count) + length;
-            this._fieldLength[documentId] = this._fieldLength[documentId] || {};
-            this._fieldLength[documentId][fieldId] = length;
+            var fieldLengths = this._fieldLength.get(documentId);
+            if (fieldLengths == null)
+                this._fieldLength.set(documentId, fieldLengths = []);
+            fieldLengths[fieldId] = length;
+            var averageFieldLength = this._averageFieldLength[fieldId] || 0;
+            var totalLength = (averageFieldLength * count) + length;
             this._averageFieldLength[fieldId] = totalLength / (count + 1);
         };
         /**
@@ -1436,19 +1708,31 @@
          * @ignore
          */
         MiniSearch.prototype.saveStoredFields = function (documentId, doc) {
-            var _this = this;
-            var _a = this._options, storeFields = _a.storeFields, extractField = _a.extractField;
+            var e_16, _a;
+            var _b = this._options, storeFields = _b.storeFields, extractField = _b.extractField;
             if (storeFields == null || storeFields.length === 0) {
                 return;
             }
-            this._storedFields[documentId] = this._storedFields[documentId] || {};
-            storeFields.forEach(function (fieldName) {
-                var fieldValue = extractField(doc, fieldName);
-                if (fieldValue === undefined) {
-                    return;
+            var documentFields = this._storedFields.get(documentId);
+            if (documentFields == null)
+                this._storedFields.set(documentId, documentFields = {});
+            try {
+                for (var storeFields_1 = __values(storeFields), storeFields_1_1 = storeFields_1.next(); !storeFields_1_1.done; storeFields_1_1 = storeFields_1.next()) {
+                    var fieldName = storeFields_1_1.value;
+                    var fieldValue = extractField(doc, fieldName);
+                    if (fieldValue === undefined) {
+                        return;
+                    }
+                    documentFields[fieldName] = fieldValue;
                 }
-                _this._storedFields[documentId][fieldName] = fieldValue;
-            });
+            }
+            catch (e_16_1) { e_16 = { error: e_16_1 }; }
+            finally {
+                try {
+                    if (storeFields_1_1 && !storeFields_1_1.done && (_a = storeFields_1.return)) _a.call(storeFields_1);
+                }
+                finally { if (e_16) throw e_16.error; }
+            }
         };
         return MiniSearch;
     }());
@@ -1457,40 +1741,71 @@
     };
     var combinators = (_a = {},
         _a[OR] = function (a, b) {
-            return Object.entries(b).reduce(function (combined, _a) {
-                var _b;
-                var _c = __read(_a, 2), documentId = _c[0], _d = _c[1], score = _d.score, match = _d.match, terms = _d.terms;
-                if (combined[documentId] == null) {
-                    combined[documentId] = { score: score, match: match, terms: terms };
+            var e_17, _a, _b;
+            try {
+                for (var b_1 = __values(b), b_1_1 = b_1.next(); !b_1_1.done; b_1_1 = b_1.next()) {
+                    var _c = __read(b_1_1.value, 2), documentId = _c[0], _d = _c[1], score_4 = _d.score, match = _d.match, terms = _d.terms;
+                    var existing = a.get(documentId);
+                    if (existing == null) {
+                        a.set(documentId, { score: score_4, match: match, terms: terms });
+                    }
+                    else {
+                        existing.score = (existing.score + score_4) * 1.5;
+                        existing.match = Object.assign(existing.match, match);
+                        (_b = existing.terms).push.apply(_b, __spreadArray([], __read(terms), false));
+                    }
                 }
-                else {
-                    combined[documentId].score += score;
-                    combined[documentId].score *= 1.5;
-                    (_b = combined[documentId].terms).push.apply(_b, __spreadArray([], __read(terms), false));
-                    Object.assign(combined[documentId].match, match);
+            }
+            catch (e_17_1) { e_17 = { error: e_17_1 }; }
+            finally {
+                try {
+                    if (b_1_1 && !b_1_1.done && (_a = b_1.return)) _a.call(b_1);
                 }
-                return combined;
-            }, a || {});
+                finally { if (e_17) throw e_17.error; }
+            }
+            return a;
         },
         _a[AND] = function (a, b) {
-            return Object.entries(b).reduce(function (combined, _a) {
-                var _b = __read(_a, 2), documentId = _b[0], _c = _b[1], score = _c.score, match = _c.match, terms = _c.terms;
-                if (a[documentId] === undefined) {
-                    return combined;
+            var e_18, _a;
+            var combined = new Map();
+            try {
+                for (var b_2 = __values(b), b_2_1 = b_2.next(); !b_2_1.done; b_2_1 = b_2.next()) {
+                    var _b = __read(b_2_1.value, 2), documentId = _b[0], _c = _b[1], score_5 = _c.score, match = _c.match, terms = _c.terms;
+                    var doc = a.get(documentId);
+                    if (doc == null)
+                        continue;
+                    combined.set(documentId, {
+                        score: doc.score + score_5,
+                        match: Object.assign(doc.match, match),
+                        terms: __spreadArray(__spreadArray([], __read(doc.terms), false), __read(terms), false)
+                    });
                 }
-                combined[documentId] = combined[documentId] || {};
-                combined[documentId].score = a[documentId].score + score;
-                combined[documentId].match = __assign(__assign({}, a[documentId].match), match);
-                combined[documentId].terms = __spreadArray(__spreadArray([], __read(a[documentId].terms), false), __read(terms), false);
-                return combined;
-            }, {});
+            }
+            catch (e_18_1) { e_18 = { error: e_18_1 }; }
+            finally {
+                try {
+                    if (b_2_1 && !b_2_1.done && (_a = b_2.return)) _a.call(b_2);
+                }
+                finally { if (e_18) throw e_18.error; }
+            }
+            return combined;
         },
         _a[AND_NOT] = function (a, b) {
-            return Object.entries(b).reduce(function (combined, _a) {
-                var _b = __read(_a, 2), documentId = _b[0], _c = _b[1]; _c.score; _c.match; _c.terms;
-                delete combined[documentId];
-                return combined;
-            }, a || {});
+            var e_19, _a;
+            try {
+                for (var _b = __values(b.keys()), _c = _b.next(); !_c.done; _c = _b.next()) {
+                    var documentId = _c.value;
+                    a.delete(documentId);
+                }
+            }
+            catch (e_19_1) { e_19 = { error: e_19_1 }; }
+            finally {
+                try {
+                    if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+                }
+                finally { if (e_19) throw e_19.error; }
+            }
+            return a;
         },
         _a);
     var tfIdf = function (tf, df, n) { return tf * Math.log(n / df); };
@@ -1530,6 +1845,107 @@
         prefix: function (term, i, terms) {
             return i === terms.length - 1;
         }
+    };
+    var createMap = function () { return new Map(); };
+    var objectToTree = function (object) {
+        var e_20, _a, e_21, _b;
+        var map = new Map();
+        try {
+            for (var _c = __values(Object.keys(object)), _d = _c.next(); !_d.done; _d = _c.next()) {
+                var key = _d.value;
+                var value = object[key];
+                if (key === LEAF) {
+                    var data = new Map();
+                    try {
+                        for (var _e = (e_21 = void 0, __values(Object.keys(value))), _f = _e.next(); !_f.done; _f = _e.next()) {
+                            var key_1 = _f.value;
+                            var _g = value[key_1], df = _g.df, ds = _g.ds;
+                            data.set(parseInt(key_1, 10), {
+                                df: df,
+                                ds: objectToNumericMap(ds)
+                            });
+                        }
+                    }
+                    catch (e_21_1) { e_21 = { error: e_21_1 }; }
+                    finally {
+                        try {
+                            if (_f && !_f.done && (_b = _e.return)) _b.call(_e);
+                        }
+                        finally { if (e_21) throw e_21.error; }
+                    }
+                    map.set(key, data);
+                }
+                else {
+                    map.set(key, objectToTree(value));
+                }
+            }
+        }
+        catch (e_20_1) { e_20 = { error: e_20_1 }; }
+        finally {
+            try {
+                if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+            }
+            finally { if (e_20) throw e_20.error; }
+        }
+        return map;
+    };
+    var objectToNumericMap = function (object) {
+        var e_22, _a;
+        var map = new Map();
+        try {
+            for (var _b = __values(Object.keys(object)), _c = _b.next(); !_c.done; _c = _b.next()) {
+                var key = _c.value;
+                map.set(parseInt(key, 10), object[key]);
+            }
+        }
+        catch (e_22_1) { e_22 = { error: e_22_1 }; }
+        finally {
+            try {
+                if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+            }
+            finally { if (e_22) throw e_22.error; }
+        }
+        return map;
+    };
+    var treeToObject = function (tree) {
+        var e_23, _a, e_24, _b;
+        var obj = {};
+        try {
+            for (var tree_1 = __values(tree), tree_1_1 = tree_1.next(); !tree_1_1.done; tree_1_1 = tree_1.next()) {
+                var _c = __read(tree_1_1.value, 2), key = _c[0], value = _c[1];
+                if (key === LEAF) {
+                    var data = {};
+                    try {
+                        for (var _d = (e_24 = void 0, __values(value.entries())), _e = _d.next(); !_e.done; _e = _d.next()) {
+                            var _f = __read(_e.value, 2), key_2 = _f[0], _g = _f[1], df = _g.df, ds = _g.ds;
+                            data[key_2] = {
+                                df: df,
+                                ds: Object.fromEntries(ds)
+                            };
+                        }
+                    }
+                    catch (e_24_1) { e_24 = { error: e_24_1 }; }
+                    finally {
+                        try {
+                            if (_e && !_e.done && (_b = _d.return)) _b.call(_d);
+                        }
+                        finally { if (e_24) throw e_24.error; }
+                    }
+                    obj[key] = data;
+                }
+                else {
+                    obj[key] = treeToObject(value);
+                }
+            }
+        }
+        catch (e_23_1) { e_23 = { error: e_23_1 }; }
+        finally {
+            try {
+                if (tree_1_1 && !tree_1_1.done && (_a = tree_1.return)) _a.call(tree_1);
+            }
+            finally { if (e_23) throw e_23.error; }
+        }
+        return obj;
     };
     // This regular expression matches any Unicode space or punctuation character
     // Adapted from https://unicode.org/cldr/utility/list-unicodeset.jsp?a=%5Cp%7BZ%7D%5Cp%7BP%7D&abb=on&c=on&esc=on

@@ -1,6 +1,4 @@
-declare type RadixTree<T> = {
-    [key: string]: RadixTree<T> | T;
-};
+declare type RadixTree<T> = Map<string, T | RadixTree<T>>;
 declare type Entry<T> = [string, T];
 
 declare type IteratorType = 'ENTRIES' | 'KEYS' | 'VALUES';
@@ -57,7 +55,7 @@ declare class SearchableMap<T = any> {
      * @internal
      */
     _prefix: string;
-    private _size?;
+    private _size;
     /**
      * The constructor is normally called without arguments, creating an empty
      * map. In order to create a [[SearchableMap]] from an iterable or from an
@@ -66,7 +64,7 @@ declare class SearchableMap<T = any> {
      * The constructor arguments are for internal use, when creating derived
      * mutable views of a map at a prefix.
      */
-    constructor(tree?: {}, prefix?: string);
+    constructor(tree?: RadixTree<T>, prefix?: string);
     /**
      * Creates and returns a mutable view of this [[SearchableMap]], containing only
      * entries that share the given prefix.
@@ -113,6 +111,7 @@ declare class SearchableMap<T = any> {
     /**
      * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/forEach
      * @param fn  Iteration function
+     * @deprecated Use a `for (... of ...)` loop instead.
      */
     forEach(fn: (key: string, value: T, map: SearchableMap) => void): void;
     /**
@@ -190,6 +189,23 @@ declare class SearchableMap<T = any> {
      * @return The [[SearchableMap]] itself, to allow chaining
      */
     update(key: string, fn: (value: T) => T): SearchableMap<T>;
+    /**
+     * Fetches the value of the given key. If the value does not exist, calls the
+     * given function to create a new value, which is inserted at the given key
+     * and subsequently returned.
+     *
+     * ### Example:
+     *
+     * ```javascript
+     * const map = searchableMap.fetch('somekey', () => new Map())
+     * map.set('foo', 'bar')
+     * ```
+     *
+     * @param key  The key to update
+     * @param defaultValue  A function that creates a new value if the key does not exist
+     * @return The existing or new value at the given key
+     */
+    fetch(key: string, initial: () => T): T;
     /**
      * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/values
      * @return An `Iterable` iterating through values.
@@ -441,13 +457,9 @@ declare type AsPlainObject = {
         [fieldName: string]: number;
     };
     fieldLength: {
-        [shortId: string]: {
-            [fieldId: string]: number;
-        };
+        [shortId: string]: number[];
     };
-    averageFieldLength: {
-        [fieldId: string]: number;
-    };
+    averageFieldLength: number[];
     storedFields: {
         [shortId: string]: any;
     };
@@ -520,24 +532,14 @@ declare class MiniSearch<T = any> {
     protected _options: OptionsWithDefaults<T>;
     protected _index: SearchableMap;
     protected _documentCount: number;
-    protected _documentIds: {
-        [shortId: string]: any;
-    };
+    protected _documentIds: Map<number, any>;
     protected _fieldIds: {
-        [fieldName: string]: number;
+        [key: string]: number;
     };
-    protected _fieldLength: {
-        [shortId: string]: {
-            [fieldId: string]: number;
-        };
-    };
-    protected _averageFieldLength: {
-        [fieldId: string]: number;
-    };
+    protected _fieldLength: Map<number, number[]>;
+    protected _averageFieldLength: number[];
     protected _nextId: number;
-    protected _storedFields: {
-        [shortId: string]: any;
-    };
+    protected _storedFields: Map<number, Record<string, unknown>>;
     /**
      * @param options  Configuration options
      *
